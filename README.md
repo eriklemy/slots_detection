@@ -1,6 +1,6 @@
 # Slot Detection for Agricultural Planting
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://raw.githubusercontent.com/eriklemy/slots_detection/refs/heads/main/notebook/home_task.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/eriklemy/slots_detection/blob/main/notebook/home_task.ipynb)
 
 This project implements a robust object detection system for identifying planting slots in agricultural imagery, overcoming challenges of small object detection and limited dataset size. The complete technical process is documented in [home_task.ipynb](notebook/home_task.ipynb).
 
