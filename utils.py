@@ -1,16 +1,20 @@
 import os
+import cv2
+
 import yaml
 import shutil
-from pathlib import Path
-import cv2
 import numpy as np
-from sahi import AutoDetectionModel
-from sahi.predict import get_prediction, get_sliced_prediction, predict
-from sahi.utils.file import download_from_url
-from sahi.utils.cv import read_image
-from ultralytics import YOLO
-import albumentations as A
 from tqdm import tqdm
+from pathlib import Path
+
+import albumentations as A
+from ultralytics import YOLO
+
+import matplotlib.pyplot as plt
+
+from sahi import AutoDetectionModel
+from sahi.utils.cv import read_image
+from sahi.predict import get_prediction, get_sliced_prediction, predict
 
 import torch
 
@@ -20,6 +24,17 @@ def load_yaml(yaml_file):
     """Load YAML file and return contents."""
     with open(yaml_file, 'r') as f:
         return yaml.safe_load(f)
+
+def plot_image_results(model_path):
+    """
+    Load and plot the image results from the specified model directory.
+    """
+    results_path = Path(f"{model_path}/")
+    results = cv2.imread(str(results_path / "results.png"))
+    plt.figure(figsize=(14, 10))
+    plt.imshow(cv2.cvtColor(results, cv2.COLOR_BGR2RGB))
+    plt.axis('off')
+    plt.show()
 
 def plot_training_results(results_path):
     """
@@ -47,6 +62,27 @@ def plot_training_results(results_path):
     plt.legend()
 
     plt.tight_layout()
+    plt.show()
+
+def plot_color_histogram(color_means, title):
+    """ Plot histogram of color channel means. """
+    plt.figure(figsize=(10, 5))
+    plt.hist(color_means[:, 0], bins=50, alpha=0.5, color='b', label='Blue')
+    plt.hist(color_means[:, 1], bins=50, alpha=0.5, color='g', label='Green')
+    plt.hist(color_means[:, 2], bins=50, alpha=0.5, color='r', label='Red')
+    plt.title(title)
+    plt.xlabel('Pixel Intensity Mean')
+    plt.ylabel('Frequency')
+    plt.legend()
+    plt.show()
+
+def plot_color_channel_distribution(color_means, title):
+    """ Plot boxplot of color channel distributions. """
+    plt.figure(figsize=(10, 5))
+    plt.boxplot([color_means[:, 0], color_means[:, 1], color_means[:, 2]])
+    plt.title('Color Channel Distributions (BGR)')
+    plt.xticks([1, 2, 3], ['Blue', 'Green', 'Red'])
+    plt.ylabel('Pixel Intensity Mean')
     plt.show()
 
 def create_sahi_dataset(data_yaml_path, output_dir, slice_size=640, overlap_ratio=0.2):
@@ -116,7 +152,6 @@ def process_dataset_split(source_dir, output_images_dir, output_labels_dir, slic
         source_images_dir = source_dir
         source_labels_dir = source_dir.replace("images", "labels")
 
-    # Create copies of original images and labels
     for img_file in tqdm(os.listdir(source_images_dir), desc=f"Processing {os.path.basename(source_dir)}"):
         if not (img_file.endswith('.jpg') or img_file.endswith('.png') or img_file.endswith('.jpeg')):
             continue
@@ -136,7 +171,7 @@ def process_dataset_split(source_dir, output_images_dir, output_labels_dir, slic
             h, w = image.shape[:2]
 
             if h > slice_size or w > slice_size:  # Only slice if image is larger than slice size
-                slice_and_save(img_path, label_path, output_images_dir, output_labels_dir, 
+                slice_and_save(img_path, label_path, output_images_dir, output_labels_dir,
                               slice_size, overlap_ratio, base_name)
         except Exception as e:
             print(f"Error processing {img_file}: {e}")
@@ -165,6 +200,7 @@ def slice_and_save(img_path, label_path, output_images_dir, output_labels_dir, s
             for line in f:
                 parts = line.strip().split()
                 class_id = int(parts[0])
+                
                 x_center = float(parts[1]) * w
                 y_center = float(parts[2]) * h
                 width = float(parts[3]) * w
@@ -200,12 +236,6 @@ def slice_and_save(img_path, label_path, output_images_dir, output_labels_dir, s
             x_end = x_start + slice_size
             y_end = y_start + slice_size
 
-            # Handle edge cases
-            x_start = max(0, x_end - slice_size)
-            y_start = max(0, y_end - slice_size)
-            x_end = min(x_start + slice_size, w)
-            y_end = min(y_start + slice_size, h)
-
             # Extract slice
             slice_img = image[y_start:y_end, x_start:x_end]
             slice_h, slice_w = slice_img.shape[:2]
@@ -214,7 +244,7 @@ def slice_and_save(img_path, label_path, output_images_dir, output_labels_dir, s
             slice_annotations = []
             for anno in annotations:
                 # Check if annotation intersects with the slice
-                if (anno['xmin'] < x_end and anno['xmax'] > x_start and 
+                if (anno['xmin'] < x_end and anno['xmax'] > x_start and
                     anno['ymin'] < y_end and anno['ymax'] > y_start):
 
                     # Clip the bounding box to the slice
@@ -223,7 +253,6 @@ def slice_and_save(img_path, label_path, output_images_dir, output_labels_dir, s
                     xmax_clipped = min(slice_w, anno['xmax'] - x_start)
                     ymax_clipped = min(slice_h, anno['ymax'] - y_start)
 
-                    # Calculate area of intersection
                     width_clipped = xmax_clipped - xmin_clipped
                     height_clipped = ymax_clipped - ymin_clipped
 
@@ -231,7 +260,7 @@ def slice_and_save(img_path, label_path, output_images_dir, output_labels_dir, s
                     original_area = (anno['xmax'] - anno['xmin']) * (anno['ymax'] - anno['ymin'])
                     clipped_area = width_clipped * height_clipped
 
-                    # Only include if the intersection is significant (at least 30% of original bbox is visible)
+                    # Only include if at least 30% of original bbox is visible
                     if clipped_area >= 0.3 * original_area:
                         # Convert back to YOLO format (class_id, x_center, y_center, width, height)
                         x_center = (xmin_clipped + xmax_clipped) / (2 * slice_w)
@@ -241,7 +270,7 @@ def slice_and_save(img_path, label_path, output_images_dir, output_labels_dir, s
 
                         slice_annotations.append(f"{anno['class_id']} {x_center} {y_center} {width} {height}")
 
-            if slice_annotations:                
+            if slice_annotations:
                 slice_file = f"{base_name}_slice_{slice_idx}.jpg"
                 cv2.imwrite(os.path.join(output_images_dir, slice_file), slice_img)
 
@@ -274,15 +303,15 @@ def apply_albumentations_augmentations(data_yaml_path):
 
     # Augmentation pipeline
     aug_transforms = A.Compose([
-        A.RandomRotate90(p=0.5),
-        A.HorizontalFlip(p=0.5),
-        A.RandomBrightnessContrast(p=0.3),
-        A.HueSaturationValue(p=0.2),
-        A.RandomGamma(gamma_limit=(60, 115), p=0.3),
-        A.GaussNoise(p=0.3),
+        A.RandomRotate90(p=0.5),                       # random 90 degree rotation with 50% probability to happen
+        A.HorizontalFlip(p=0.5),                       # horizontal flip with 50% probability
+        A.RandomBrightnessContrast(p=0.3),             # brightness/contrast with 30% probability
+        A.HueSaturationValue(p=0.2),                   # hue/saturation/value with 20% probability
+        A.RandomGamma(gamma_limit=(60, 115), p=0.3),   # random gamma correction with 30% probability and medium gamma range
+        A.GaussNoise(p=0.3),                           # gaussian noise with 30% probability
     ], bbox_params=A.BboxParams(format='yolo', label_fields=['class_labels']))
 
-    images = [f for f in os.listdir(images_dir) if f.endswith(('.jpg', '.jpeg', '.png'))]    
+    images = [f for f in os.listdir(images_dir) if f.endswith(('.jpg', '.jpeg', '.png'))]
     for img_file in tqdm(images, desc="Applying augmentations"):
         base_name = os.path.splitext(img_file)[0]
         img_path = os.path.join(images_dir, img_file)
@@ -309,7 +338,7 @@ def apply_albumentations_augmentations(data_yaml_path):
         if not bboxes:
             continue
 
-        # Apply augmentations 2 times
+        # Apply augmentations 2 times (to create 3x more data and allow for more variety - since some augmentations are random)
         for i in range(2):
             try:
                 augmented = aug_transforms(image=image, bboxes=bboxes, class_labels=class_labels)
@@ -317,11 +346,10 @@ def apply_albumentations_augmentations(data_yaml_path):
                 aug_bboxes = augmented['bboxes']
                 aug_class_labels = augmented['class_labels']
 
-                # Save augmented image
+                # Save augmented image and labels
                 aug_img_file = f"{base_name}_aug_{i}.jpg"
                 cv2.imwrite(os.path.join(images_dir, aug_img_file), aug_image)
 
-                # Save augmented labels
                 aug_label_file = f"{base_name}_aug_{i}.txt"
                 with open(os.path.join(labels_dir, aug_label_file), 'w') as f:
                     for j, bbox in enumerate(aug_bboxes):
@@ -344,7 +372,6 @@ def evaluate_with_sahi(model_path, data_yaml_path, slice_size=640, overlap_ratio
     data_config = load_yaml(data_yaml_path)
     val_dir = data_config['val']
 
-    # If val_dir is a relative path, make it absolute based on the yaml location
     if not os.path.isabs(val_dir):
         base_dir = os.path.dirname(data_yaml_path)
         val_dir = os.path.join(base_dir, val_dir)
@@ -393,35 +420,27 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="SAHI implementation for YOLO with small dataset")
-    parser.add_argument('--data', type=str, default='datasets/erick/data.yaml', 
+    parser.add_argument('--data', type=str, default='datasets/erick/data.yaml',
                         help='Path to data.yaml file')
-    parser.add_argument('--output', type=str, default='datasets/erick_sahi', 
-                        help='Output directory for the SAHI-augmented dataset')
-    parser.add_argument('--slice-size', type=int, default=640, 
+    parser.add_argument('--output', type=str, default='datasets/sliced',
+                        help='Output directory for the sliced SAHI dataset')
+    parser.add_argument('--slice-size', type=int, default=640,
                         help='Size of the slices')
-    parser.add_argument('--overlap-ratio', type=float, default=0.2, 
+    parser.add_argument('--overlap-ratio', type=float, default=0.2,
                         help='Overlap ratio between slices')
-    parser.add_argument('--model-size', type=str, default='n', choices=['n', 's', 'm', 'l', 'x'],
-                        help='YOLOv8 model size')
-    parser.add_argument('--epochs', type=int, default=100, 
-                        help='Number of epochs to train')
-    parser.add_argument('--batch-size', type=int, default=8,
-                        help='Batch size')
-    parser.add_argument('--img-size', type=int, default=640, 
-                        help='Image size')
-    parser.add_argument('--skip-slicing', action='store_true', 
-                        help='Skip SAHI slicing (only apply augmentations)')
-    parser.add_argument('--skip-augmentations', action='store_true', 
+    parser.add_argument('--skip-slicing', action='store_true',
+                        help='Skip SAHI slicing')
+    parser.add_argument('--skip-augmentations', action='store_true',
                         help='Skip Albumentations augmentations')
 
     args = parser.parse_args()
 
-    # Create SAHI-augmented dataset
+    # Create sliced (SAHI) dataset
     if not args.skip_slicing:
         data_yaml_path = create_sahi_dataset(
-            args.data, 
-            args.output, 
-            args.slice_size, 
+            args.data,
+            args.output,
+            args.slice_size,
             args.overlap_ratio
         )
     else:
@@ -435,4 +454,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    # evaluate_with_sahi(r"C://Users/rocha/Documents/NACRE/sahi_improved_yolo/yolov8n_mixed_resolution/weights/best.pt", r"C://Users/rocha/Documents/NACRE/datasets/erick/data.yaml", 640, 0.2)
