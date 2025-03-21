@@ -4,6 +4,8 @@
 
 This project implements a robust object detection system for identifying planting slots in agricultural imagery, overcoming challenges of small object detection and limited dataset size. The complete technical process is documented in [home_task.ipynb](notebook/home_task.ipynb).
 
+**Technical Report:** Full execution workflow and experimental results from Google Colaboratory, including training/evaluation metrics and model performance visualizations [[PDF]](https://github.com/eriklemy/notebook/home_task.pdf)
+
 ## Key Features
 - **YOLOv8-based detection** optimized for small objects
 - **Data augmentation** (3x dataset expansion)
